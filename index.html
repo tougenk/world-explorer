@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>世界の国を学ぼう</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Hiragino Sans', 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    #map {
+      width: 100vw;
+      height: 100vh;
+      cursor: default;
+    }
+
+    /* ── タイトルバー ── */
+    #title-bar {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px 28px;
+      border-radius: 30px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.18);
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a237e;
+      z-index: 1000;
+      white-space: nowrap;
+    }
+
+    /* ── ヒント ── */
+    #hint {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.62);
+      color: white;
+      padding: 10px 22px;
+      border-radius: 24px;
+      font-size: 13px;
+      z-index: 1000;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    /* ── ローディング ── */
+    #loading {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(26,35,126,0.85);
+      color: white;
+      padding: 10px 22px;
+      border-radius: 24px;
+      font-size: 13px;
+      z-index: 2000;
+      display: none;
+    }
+
+    /* ── 地図初期ローディング ── */
+    #map-loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.85);
+      z-index: 3000;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a237e;
+      gap: 12px;
+    }
+    .spinner {
+      width: 24px; height: 24px;
+      border: 3px solid #c5cae9;
+      border-top-color: #3949ab;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 情報パネル ── */
+    #info-panel {
+      position: fixed;
+      top: 0;
+      right: -420px;
+      width: 380px;
+      height: 100vh;
+      background: white;
+      box-shadow: -4px 0 24px rgba(0,0,0,0.14);
+      transition: right 0.35s cubic-bezier(0.4,0,0.2,1);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+    }
+    #info-panel.open { right: 0; }
+
+    /* パネルヘッダー */
+    .panel-header {
+      background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%);
+      padding: 28px 24px 24px;
+      color: white;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .close-btn {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.35); }
+
+    .flag-img {
+      width: 88px;
+      height: auto;
+      max-height: 58px;
+      object-fit: contain;
+      border-radius: 5px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+      margin-bottom: 14px;
+      display: block;
+    }
+    .flag-placeholder {
+      width: 88px; height: 58px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 5px;
+      margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+    }
+    .name-ja {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.2;
+    }
+    .name-en {
+      font-size: 14px;
+      opacity: 0.72;
+      margin-top: 4px;
+      font-weight: 400;
+    }
+
+    /* パネルボディ */
+    .panel-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .info-card {
+      background: #f5f6fb;
+      border-radius: 14px;
+      padding: 15px 16px;
+      margin-bottom: 11px;
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+    }
+    .info-icon {
+      font-size: 26px;
+      min-width: 36px;
+      text-align: center;
+      margin-top: 1px;
+    }
+    .info-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+      color: #888;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .info-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1a1a2e;
+      line-height: 1.35;
+    }
+    .info-sub {
+      font-size: 12px;
+      color: #777;
+      margin-top: 3px;
+    }
+
+    /* 挨拶カード強調 */
+    .card-greeting { background: #fff8f0; border: 1.5px solid #ffe0b2; }
+    .card-greeting .info-value { color: #e65100; font-size: 22px; }
+
+    /* ── モバイル対応 ── */
+    @media (max-width: 480px) {
+      #info-panel { width: 100vw; right: -100vw; }
+      #info-panel.open { right: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="map-loading">
+  <div class="spinner"></div>
+  <span>地図データを読み込み中...</span>
+</div>
+
+<div id="title-bar">🌍 世界の国を学ぼう</div>
+<div id="map"></div>
+<div id="hint">国をクリックすると情報が表示されます</div>
+<div id="loading">情報を取得中...</div>
+
+<!-- 情報パネル -->
+<div id="info-panel">
+  <div class="panel-header">
+    <button class="close-btn" onclick="closePanel()" title="閉じる">×</button>
+    <div id="flag-container"><div class="flag-placeholder">🏳️</div></div>
+    <div class="name-ja" id="name-ja">—</div>
+    <div class="name-en" id="name-en">—</div>
+  </div>
+  <div class="panel-body">
+    <div class="info-card">
+      <div class="info-icon">🏛️</div>
+      <div>
+        <div class="info-label">首都</div>
+        <div class="info-value" id="val-capital">—</div>
+      </div>
+    </div>
+    <div class="info-card">
+      <div class="info-icon">🗣️</div>
+      <div>
+        <div class="info-label">言語</div>
+        <div class="info-value" id="val-language">—</div>
+      </div>
+    </div>
+    <div class="info-card card-greeting">
+      <div class="info-icon">👋</div>
+      <div>
+        <div class="info-label">あいさつ</div>
+        <div class="info-value" id="val-greeting">—</div>
+        <div class="info-sub" id="val-greeting-sub"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── 挨拶辞書（国コード → { greeting, romanized }）───
+const GREETINGS = {
+  // 東アジア
+  JPN: { greeting: "こんにちは", romanized: "Konnichiwa（コンニチワ）" },
+  CHN: { greeting: "你好", romanized: "Nǐ hǎo（ニーハオ）" },
+  KOR: { greeting: "안녕하세요", romanized: "Annyeonghaseyo（アンニョンハセヨ）" },
+  MNG: { greeting: "Сайн уу", romanized: "Sain uu（サイン・ウー）" },
+  TWN: { greeting: "你好", romanized: "Nǐ hǎo（ニーハオ）" },
+  // 東南アジア
+  THA: { greeting: "สวัสดีครับ", romanized: "Sawasdee（サワディー）" },
+  VNM: { greeting: "Xin chào", romanized: "シン・チャオ" },
+  IDN: { greeting: "Halo", romanized: "ハロー" },
+  PHL: { greeting: "Kumusta", romanized: "クムスタ" },
+  MYS: { greeting: "Helo", romanized: "ヘロー" },
+  MMR: { greeting: "မင်္ဂလာပါ", romanized: "Mingalaba（ミンガラーバー）" },
+  KHM: { greeting: "ជំរាបសួរ", romanized: "Chomreap suor（チョムリアップスオー）" },
+  LAO: { greeting: "ສະບາຍດີ", romanized: "Sabaidee（サバイディー）" },
+  SGP: { greeting: "Hello / 你好", romanized: "ハロー / ニーハオ" },
+  BRN: { greeting: "Helo", romanized: "ヘロー" },
+  TLS: { greeting: "Olá", romanized: "オラ" },
+  // 南アジア
+  IND: { greeting: "नमस्ते", romanized: "Namaste（ナマステ）" },
+  BGD: { greeting: "আস-সালামু আলাইকুম", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  PAK: { greeting: "السلام علیکم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  NPL: { greeting: "नमस्ते", romanized: "Namaste（ナマステ）" },
+  LKA: { greeting: "ආයුබෝවන්", romanized: "Ayubowan（アユボワン）" },
+  AFG: { greeting: "سلام", romanized: "Salam（サラーム）" },
+  MDV: { greeting: "ކިހިނެހެ؟", romanized: "Kihineh?（キヒネー）" },
+  BTN: { greeting: "Kuzu zangpo la", romanized: "クズ・ザンポ・ラ" },
+  // 中央アジア
+  KAZ: { greeting: "Сәлем", romanized: "Sälem（サーレム）" },
+  UZB: { greeting: "Assalomu alaykum", romanized: "アッサロム・アライクム" },
+  KGZ: { greeting: "Саламатсызбы", romanized: "Salamatsyzby（サラマツズビー）" },
+  TJK: { greeting: "Салом", romanized: "Salom（サロム）" },
+  TKM: { greeting: "Salam", romanized: "サラム" },
+  // 中東
+  SAU: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  ARE: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  IRN: { greeting: "سلام", romanized: "Salâm（サラーム）" },
+  ISR: { greeting: "שָׁלוֹם", romanized: "Shalom（シャローム）" },
+  TUR: { greeting: "Merhaba", romanized: "メルハバ" },
+  IRQ: { greeting: "مرحبا", romanized: "Marhaba（マルハバ）" },
+  JOR: { greeting: "مرحبا", romanized: "Marhaba（マルハバ）" },
+  LBN: { greeting: "مرحبا", romanized: "Marhaba（マルハバ）" },
+  SYR: { greeting: "مرحبا", romanized: "Marhaba（マルハバ）" },
+  YEM: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  OMN: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  KWT: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  QAT: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  BHR: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  // ヨーロッパ
+  GBR: { greeting: "Hello", romanized: "ハロー" },
+  IRL: { greeting: "Hello / Dia dhuit", romanized: "ハロー / ジア・ウィット" },
+  FRA: { greeting: "Bonjour", romanized: "ボンジュール" },
+  DEU: { greeting: "Hallo", romanized: "ハロー" },
+  ITA: { greeting: "Ciao", romanized: "チャオ" },
+  ESP: { greeting: "Hola", romanized: "オラ" },
+  PRT: { greeting: "Olá", romanized: "オラ" },
+  NLD: { greeting: "Hallo", romanized: "ハロー" },
+  BEL: { greeting: "Bonjour / Hallo", romanized: "ボンジュール / ハロー" },
+  CHE: { greeting: "Grüezi", romanized: "グリュエツィ" },
+  AUT: { greeting: "Hallo", romanized: "ハロー" },
+  GRC: { greeting: "Γεια σου", romanized: "Yia sou（ヤーサス）" },
+  RUS: { greeting: "Привет", romanized: "Privet（プリーヴェット）" },
+  POL: { greeting: "Cześć", romanized: "チェシチ" },
+  CZE: { greeting: "Ahoj", romanized: "アホイ" },
+  SVK: { greeting: "Ahoj", romanized: "アホイ" },
+  HUN: { greeting: "Helló", romanized: "ヘッロー" },
+  ROU: { greeting: "Bună ziua", romanized: "ブナ・ジュア" },
+  BGR: { greeting: "Здравейте", romanized: "Zdraveyte（ズドラヴェイテ）" },
+  SRB: { greeting: "Zdravo", romanized: "ズドラヴォ" },
+  HRV: { greeting: "Bok", romanized: "ボク" },
+  UKR: { greeting: "Привіт", romanized: "Pryvit（プリヴィット）" },
+  SWE: { greeting: "Hej", romanized: "ヘイ" },
+  NOR: { greeting: "Hei", romanized: "ヘイ" },
+  DNK: { greeting: "Hej", romanized: "ヘイ" },
+  FIN: { greeting: "Hei", romanized: "ヘイ" },
+  ISL: { greeting: "Halló", romanized: "ハッロー" },
+  LUX: { greeting: "Moien", romanized: "モイエン" },
+  MCO: { greeting: "Bonjour", romanized: "ボンジュール" },
+  AND: { greeting: "Hola", romanized: "オラ" },
+  MLT: { greeting: "Bonġu", romanized: "ボンジュ" },
+  SVN: { greeting: "Zdravo", romanized: "ズドラヴォ" },
+  ALB: { greeting: "Mirëdita", romanized: "ミルディタ" },
+  MKD: { greeting: "Здраво", romanized: "Zdravo（ズドラヴォ）" },
+  BIH: { greeting: "Zdravo", romanized: "ズドラヴォ" },
+  MNE: { greeting: "Zdravo", romanized: "ズドラヴォ" },
+  BLR: { greeting: "Прывітанне", romanized: "Pryvitannie（プリヴィタニエ）" },
+  MDA: { greeting: "Bună ziua", romanized: "ブナ・ジュア" },
+  LTU: { greeting: "Labas", romanized: "ラバス" },
+  LVA: { greeting: "Sveiki", romanized: "スヴェイキ" },
+  EST: { greeting: "Tere", romanized: "テレ" },
+  // 北米
+  USA: { greeting: "Hello", romanized: "ハロー" },
+  CAN: { greeting: "Hello / Bonjour", romanized: "ハロー / ボンジュール" },
+  MEX: { greeting: "Hola", romanized: "オラ" },
+  // 中米・カリブ
+  GTM: { greeting: "Hola", romanized: "オラ" },
+  BLZ: { greeting: "Hello", romanized: "ハロー" },
+  HND: { greeting: "Hola", romanized: "オラ" },
+  SLV: { greeting: "Hola", romanized: "オラ" },
+  NIC: { greeting: "Hola", romanized: "オラ" },
+  CRI: { greeting: "Hola", romanized: "オラ" },
+  PAN: { greeting: "Hola", romanized: "オラ" },
+  CUB: { greeting: "Hola", romanized: "オラ" },
+  JAM: { greeting: "Wha gwaan", romanized: "ワ・グワーン（パトワ語）" },
+  HTI: { greeting: "Bonjou", romanized: "ボンジュ（クレオール語）" },
+  DOM: { greeting: "Hola", romanized: "オラ" },
+  TTO: { greeting: "Hello", romanized: "ハロー" },
+  // 南米
+  BRA: { greeting: "Olá", romanized: "オラ" },
+  ARG: { greeting: "Hola", romanized: "オラ" },
+  CHL: { greeting: "Hola", romanized: "オラ" },
+  COL: { greeting: "Hola", romanized: "オラ" },
+  PER: { greeting: "Hola", romanized: "オラ" },
+  VEN: { greeting: "Hola", romanized: "オラ" },
+  ECU: { greeting: "Hola", romanized: "オラ" },
+  BOL: { greeting: "Hola", romanized: "オラ" },
+  PRY: { greeting: "Hola / Mba'éichapa", romanized: "オラ / ンバエイチャパ（グアラニー語）" },
+  URY: { greeting: "Hola", romanized: "オラ" },
+  GUY: { greeting: "Hello", romanized: "ハロー" },
+  SUR: { greeting: "Hallo", romanized: "ハロー" },
+  // アフリカ
+  EGY: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  NGA: { greeting: "Sannu", romanized: "サンヌ（ハウサ語）" },
+  ZAF: { greeting: "Sawubona", romanized: "サウボナ（ズールー語）" },
+  ETH: { greeting: "ሰላም", romanized: "Selam（セラム）" },
+  KEN: { greeting: "Habari", romanized: "ハバリ（スワヒリ語）" },
+  TZA: { greeting: "Habari", romanized: "ハバリ（スワヒリ語）" },
+  GHA: { greeting: "Akwaaba", romanized: "アクワーバ（トウィ語）" },
+  MAR: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  DZA: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  LBY: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  TUN: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライクム）" },
+  SDN: { greeting: "السلام عليكم", romanized: "As-salamu alaykum（アッサラームアライكム）" },
+  CMR: { greeting: "Bonjour", romanized: "ボンジュール" },
+  SEN: { greeting: "Bonjour", romanized: "ボンジュール" },
+  CIV: { greeting: "Bonjour", romanized: "ボンジュール" },
+  UGA: { greeting: "Hello", romanized: "ハロー" },
+  ZMB: { greeting: "Muli bwanji", romanized: "ムリ・バニ（ニャンジャ語）" },
+  ZWE: { greeting: "Hello", romanized: "ハロー" },
+  MOZ: { greeting: "Olá", romanized: "オラ" },
+  MDG: { greeting: "Manao ahoana", romanized: "マナオ・アオアナ（マダガスカル語）" },
+  AGO: { greeting: "Olá", romanized: "オラ" },
+  SOM: { greeting: "Nabad", romanized: "ナバド（ソマリ語）" },
+  RWA: { greeting: "Muraho", romanized: "ムラホ（ルワンダ語）" },
+  BDI: { greeting: "Muraho", romanized: "ムラホ" },
+  COD: { greeting: "Bonjour", romanized: "ボンジュール" },
+  COG: { greeting: "Bonjour", romanized: "ボンジュール" },
+  CAF: { greeting: "Bonjour", romanized: "ボンジュール" },
+  GAB: { greeting: "Bonjour", romanized: "ボンジュール" },
+  GNQ: { greeting: "Hola", romanized: "オラ" },
+  STP: { greeting: "Olá", romanized: "オラ" },
+  // オセアニア
+  AUS: { greeting: "G'day", romanized: "グダイ" },
+  NZL: { greeting: "Kia ora", romanized: "キア・オラ（マオリ語）" },
+  PNG: { greeting: "Gude", romanized: "グデ（ピジン語）" },
+  FJI: { greeting: "Bula", romanized: "ブラ" },
+  SLB: { greeting: "Hello", romanized: "ハロー" },
+  VUT: { greeting: "Hello", romanized: "ハロー" },
+  WSM: { greeting: "Talofa", romanized: "タロファ（サモア語）" },
+  TON: { greeting: "Mālō e lelei", romanized: "マーロ・エ・レレイ（トンガ語）" },
+  KIR: { greeting: "Mauri", romanized: "マウリ（キリバス語）" },
+};
+
+// ─── 言語コード → 日本語名 ───
+const LANG_MAP = {
+  jpn:"日本語", eng:"英語", fra:"フランス語", deu:"ドイツ語",
+  spa:"スペイン語", por:"ポルトガル語", rus:"ロシア語", zho:"中国語",
+  ara:"アラビア語", hin:"ヒンディー語", ben:"ベンガル語", kor:"韓国語",
+  ita:"イタリア語", nld:"オランダ語", pol:"ポーランド語", tur:"トルコ語",
+  vie:"ベトナム語", tha:"タイ語", ind:"インドネシア語", msa:"マレー語",
+  mya:"ビルマ語", khm:"クメール語", lao:"ラオス語", nep:"ネパール語",
+  sin:"シンハラ語", swa:"スワヒリ語", hau:"ハウサ語", amh:"アムハラ語",
+  som:"ソマリ語", afr:"アフリカーンス語", zul:"ズールー語",
+  ces:"チェコ語", slk:"スロバキア語", hun:"ハンガリー語", ron:"ルーマニア語",
+  bul:"ブルガリア語", srp:"セルビア語", hrv:"クロアチア語", ukr:"ウクライナ語",
+  swe:"スウェーデン語", nor:"ノルウェー語", dan:"デンマーク語",
+  fin:"フィンランド語", isl:"アイスランド語", ell:"ギリシャ語",
+  heb:"ヘブライ語", fas:"ペルシャ語", urd:"ウルドゥー語",
+  kaz:"カザフ語", uzb:"ウズベク語", tgl:"タガログ語",
+  mri:"マオリ語", fij:"フィジー語", smo:"サモア語", ton:"トンガ語",
+  cat:"カタルーニャ語", gle:"アイルランド語", ltz:"ルクセンブルク語",
+  slv:"スロベニア語", lit:"リトアニア語", lav:"ラトビア語", est:"エストニア語",
+  bel:"ベラルーシ語", mkd:"マケドニア語", bos:"ボスニア語", sqi:"アルバニア語",
+  mlt:"マルタ語", hye:"アルメニア語", kat:"ジョージア語", aze:"アゼルバイジャン語",
+  kir:"キルギス語", tgk:"タジク語", tuk:"トルクメン語",
+  pus:"パシュトー語", tir:"ティグリニャ語", kin:"ルワンダ語",
+  run:"ルンディ語", lug:"ルガンダ語", sna:"ショナ語", nya:"チェワ語",
+  lin:"リンガラ語", kon:"コンゴ語",
+};
+
+// ─── Leaflet 初期化 ───
+const map = L.map('map', {
+  center: [20, 10],
+  zoom: 2,
+  minZoom: 2,
+  maxZoom: 8,
+  zoomControl: true,
+  worldCopyJump: true,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://carto.com/">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  subdomains: 'abcd',
+  maxZoom: 19,
+}).addTo(map);
+
+let geojsonLayer = null;
+let activeLayer = null;
+
+const defaultStyle = {
+  fillColor: '#5c6bc0',
+  fillOpacity: 0.18,
+  color: '#3949ab',
+  weight: 0.8,
+};
+const hoverStyle = {
+  fillColor: '#3949ab',
+  fillOpacity: 0.45,
+  color: '#1a237e',
+  weight: 1.5,
+};
+const activeStyle = {
+  fillColor: '#ff6d00',
+  fillOpacity: 0.55,
+  color: '#e65100',
+  weight: 2,
+};
+
+function onMouseOver(e) {
+  const layer = e.target;
+  if (layer !== activeLayer) layer.setStyle(hoverStyle);
+}
+function onMouseOut(e) {
+  const layer = e.target;
+  if (layer !== activeLayer) geojsonLayer.resetStyle(layer);
+}
+
+async function onCountryClick(e) {
+  L.DomEvent.stopPropagation(e);
+  const layer = e.target;
+  const code = layer.feature.id; // ISO alpha-3
+
+  if (activeLayer && activeLayer !== layer) {
+    geojsonLayer.resetStyle(activeLayer);
+  }
+  activeLayer = layer;
+  layer.setStyle(activeStyle);
+
+  await loadCountryInfo(code);
+}
+
+// ─── 国情報の取得・表示 ───
+async function loadCountryInfo(code) {
+  document.getElementById('loading').style.display = 'block';
+
+  try {
+    const res = await fetch(
+      `https://restcountries.com/v3.1/alpha/${code}?fields=name,capital,flags,languages,translations`
+    );
+    if (!res.ok) throw new Error('not found');
+    const data = await res.json();
+    renderPanel(code, data);
+  } catch {
+    renderPanelFallback(code);
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+function renderPanel(code, data) {
+  const nameJa = data.translations?.jpn?.common || data.name?.common || code;
+  const nameEn = data.name?.common || code;
+  const capital = data.capital?.[0] ?? '情報なし';
+  const flagUrl = data.flags?.png || data.flags?.svg || '';
+
+  const langs = data.languages || {};
+  const langText = Object.keys(langs)
+    .map(k => LANG_MAP[k] || langs[k])
+    .join('、') || '情報なし';
+
+  const g = GREETINGS[code];
+  const greeting = g?.greeting ?? 'Hello';
+  const greetingSub = g?.romanized ?? '';
+
+  // 国旗
+  const flagContainer = document.getElementById('flag-container');
+  if (flagUrl) {
+    flagContainer.innerHTML = `<img class="flag-img" src="${flagUrl}" alt="${nameJa}の国旗" />`;
+  } else {
+    flagContainer.innerHTML = `<div class="flag-placeholder">🏳️</div>`;
+  }
+
+  document.getElementById('name-ja').textContent = nameJa;
+  document.getElementById('name-en').textContent = nameEn;
+  document.getElementById('val-capital').textContent = capital;
+  document.getElementById('val-language').textContent = langText;
+  document.getElementById('val-greeting').textContent = greeting;
+  document.getElementById('val-greeting-sub').textContent = greetingSub;
+
+  document.getElementById('info-panel').classList.add('open');
+}
+
+function renderPanelFallback(code) {
+  document.getElementById('flag-container').innerHTML = `<div class="flag-placeholder">🏳️</div>`;
+  document.getElementById('name-ja').textContent = code;
+  document.getElementById('name-en').textContent = code;
+  document.getElementById('val-capital').textContent = '情報なし';
+  document.getElementById('val-language').textContent = '情報なし';
+
+  const g = GREETINGS[code];
+  document.getElementById('val-greeting').textContent = g?.greeting ?? 'Hello';
+  document.getElementById('val-greeting-sub').textContent = g?.romanized ?? '';
+
+  document.getElementById('info-panel').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('info-panel').classList.remove('open');
+  if (activeLayer) {
+    geojsonLayer.resetStyle(activeLayer);
+    activeLayer = null;
+  }
+}
+
+// ─── 日付変更線をまたぐポリゴンの座標修正 ───
+// 各リングの重心経度を基準に、離れすぎたリングを ±360° シフトして連続させる。
+// ロシア・フィジー・キリバスなど 180° をまたぐ国に有効。
+function fixAntimeridian(geojson) {
+  return {
+    ...geojson,
+    features: geojson.features.map(feature => {
+      const geom = feature.geometry;
+      if (!geom) return feature;
+      if (geom.type === 'Polygon') {
+        return { ...feature, geometry: { ...geom, coordinates: shiftRings([geom.coordinates])[0] } };
+      }
+      if (geom.type === 'MultiPolygon') {
+        return { ...feature, geometry: { ...geom, coordinates: shiftRings(geom.coordinates) } };
+      }
+      return feature;
+    }),
+  };
+}
+
+function shiftRings(multiPolyCoords) {
+  // 全リングの平均経度を重心として算出
+  let sum = 0, count = 0;
+  for (const poly of multiPolyCoords)
+    for (const ring of poly)
+      for (const [lon] of ring) { sum += lon; count++; }
+  if (count === 0) return multiPolyCoords;
+  const centroid = sum / count;
+
+  // 各リングの平均経度が重心から 180° 以上離れていればシフト
+  return multiPolyCoords.map(poly =>
+    poly.map(ring => {
+      const avg = ring.reduce((s, [l]) => s + l, 0) / ring.length;
+      let shift = 0;
+      while (centroid - (avg + shift) >  180) shift += 360;
+      while ((avg + shift) - centroid  >  180) shift -= 360;
+      return shift ? ring.map(([lon, lat]) => [lon + shift, lat]) : ring;
+    })
+  );
+}
+
+// ─── GeoJSON 読み込み ───
+fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
+  .then(r => r.json())
+  .then(data => {
+    geojsonLayer = L.geoJSON(fixAntimeridian(data), {
+      style: defaultStyle,
+      onEachFeature(feature, layer) {
+        layer.on({
+          mouseover: onMouseOver,
+          mouseout: onMouseOut,
+          click: onCountryClick,
+        });
+      },
+    }).addTo(map);
+    document.getElementById('map-loading').style.display = 'none';
+  })
+  .catch(() => {
+    document.getElementById('map-loading').innerHTML = '⚠️ 地図の読み込みに失敗しました。ページを再読み込みしてください。';
+  });
+</script>
+</body>
+</html>
